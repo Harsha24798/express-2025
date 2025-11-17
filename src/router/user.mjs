@@ -1,6 +1,6 @@
 import { Router } from "express";
 import DB from "../db/db.mjs";
-import { loginValidate } from "../../util/validationMethod.mjs";
+import { loginValidate, registerValidate } from "../../util/validationMethod.mjs";
 import { matchedData, validationResult } from "express-validator";
 import { loginError } from "../../util/error-creator.mjs";
 import bcrypt from "bcrypt";
@@ -166,6 +166,63 @@ userRouter.post('/login', loginValidate, async (req, res) => {
 
   } catch (error) {
     console.error("Login Error:", error);
+    return res.status(500).json({
+      msg: "Internal Server Error",
+      error: error.message,
+    });
+  }
+});
+
+// REGISTER API
+userRouter.post("/register", registerValidate, async (req, res) => {
+  try {
+
+    // 1️⃣ Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        msg: "Validation failed",
+        errors: errors.array(),
+      });
+    }
+
+    const { Name, Username, Password } = req.body;
+
+    // 2️⃣ Check if user exists
+    const existingUser = await DB.user.findUnique({
+      where: { Username },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        msg: "Username already exists",
+      });
+    }
+
+    // 3️⃣ Hash password
+    const hashedPassword = await bcrypt.hash(Password, 10);
+
+    // 4️⃣ Create user in DB
+    const newUser = await DB.user.create({
+      data: {
+        Name,
+        Username,
+        Password: hashedPassword,
+      },
+    });
+
+    // 5️⃣ Response
+    return res.status(201).json({
+      msg: "User registered successfully",
+      user: {
+        Id: newUser.Id,
+        Name: newUser.Name,
+        Username: newUser.Username,
+      },
+    });
+
+  } catch (error) {
+    console.error("Register Error:", error);
     return res.status(500).json({
       msg: "Internal Server Error",
       error: error.message,
