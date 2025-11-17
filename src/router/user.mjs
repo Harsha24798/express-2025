@@ -1,5 +1,10 @@
 import { Router } from "express";
 import DB from "../db/db.mjs";
+import { loginValidate } from "../../util/validationMethod.mjs";
+import { matchedData, validationResult } from "express-validator";
+import { loginError } from "../../util/error-creator.mjs";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
 const userRouter = Router();
 
@@ -102,6 +107,67 @@ userRouter.delete('/delete-user/:id', async (req, res) => {
     console.error(error);
     return res.status(500).json({
       msg: "Error deleting user",
+      error: error.message,
+    });
+  }
+});
+
+// Login
+userRouter.post('/login', loginValidate, async (req, res) => {
+  try {
+    // 1️⃣ Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const formattedError = loginError(errors.array());
+      return res.status(400).json({
+        msg: "Validation failed",
+        errors: formattedError,
+      });
+    }
+
+    // 2️⃣ Clean data
+    const { Username, Password } = matchedData(req);
+
+    // 3️⃣ Find user by username
+    const user = await DB.user.findUnique({
+      where: { Username: Username },
+    });
+
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    // 4️⃣ Compare password
+    const isMatch = await bcrypt.compare(Password, user.Password);
+    if (!isMatch) {
+      return res.status(401).json({ msg: "Invalid password" });
+    }
+
+    // 5️⃣ Generate token
+    const token = jwt.sign(
+      {
+        id: user.Id,
+        username: user.Username,
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "7d" }
+    );
+
+    // 6️⃣ Response
+    return res.status(200).json({
+      msg: "Login successful",
+      token,
+      user: {
+        Id: user.Id,
+        Username: user.Username,
+        Name: user.Name,
+      },
+    });
+
+  } catch (error) {
+    console.error("Login Error:", error);
+    return res.status(500).json({
+      msg: "Internal Server Error",
       error: error.message,
     });
   }
